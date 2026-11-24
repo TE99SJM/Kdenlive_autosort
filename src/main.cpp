@@ -129,6 +129,39 @@ QString cameraLabel(const QString &path)
     }
 }
 
+QStringList ffprobeCandidates()
+{
+    QStringList paths;
+    auto add = [&paths](const QString &path) {
+        if (path.isEmpty() || !QFileInfo(path).isFile()) {
+            return;
+        }
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        const QString resolved = canonical.isEmpty() ? QFileInfo(path).absoluteFilePath() : canonical;
+        if (!paths.contains(resolved, Qt::CaseInsensitive)) {
+            paths << resolved;
+        }
+    };
+
+    QSettings settings;
+    add(settings.value(QStringLiteral("ffprobePath")).toString());
+#ifdef Q_OS_WIN
+    const QString executableName = QStringLiteral("ffprobe.exe");
+#else
+    const QString executableName = QStringLiteral("ffprobe");
+#endif
+    add(QDir(QCoreApplication::applicationDirPath()).filePath(executableName));
+#ifdef Q_OS_WIN
+    add(QDir(qEnvironmentVariable("ProgramFiles")).filePath(QStringLiteral("kdenlive/bin/ffprobe.exe")));
+    add(QDir(qEnvironmentVariable("ProgramFiles(x86)")).filePath(QStringLiteral("kdenlive/bin/ffprobe.exe")));
+#endif
+    add(QStandardPaths::findExecutable(QStringLiteral("ffprobe")));
+#ifdef Q_OS_WIN
+    add(QStandardPaths::findExecutable(QStringLiteral("ffprobe.exe")));
+#endif
+    return paths;
+}
+
 QJsonObject rationalTime(double value, double rate)
 {
     return {
@@ -401,43 +434,44 @@ private:
             return;
         }
 
-        QSettings settings;
-        QString ffprobe = settings.value(QStringLiteral("ffprobePath")).toString();
-        if (!QFileInfo::exists(ffprobe)) {
-            ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
-#ifdef Q_OS_WIN
-            if (ffprobe.isEmpty()) {
-                ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe.exe"));
-            }
-#endif
-        }
-        if (ffprobe.isEmpty()) {
+        QStringList ffprobes = ffprobeCandidates();
+        if (ffprobes.isEmpty()) {
 #ifdef Q_OS_WIN
             const QString filter = QStringLiteral("FFprobe (ffprobe.exe);;All files (*)");
 #else
             const QString filter = QStringLiteral("FFprobe (ffprobe);;All files (*)");
 #endif
-            ffprobe = QFileDialog::getOpenFileName(this, QStringLiteral("Locate FFprobe"), QString(), filter);
+            const QString selected = QFileDialog::getOpenFileName(this, QStringLiteral("Locate FFprobe"), QString(), filter);
+            if (selected.isEmpty()) {
+                return;
+            }
+            ffprobes << selected;
         }
-        if (ffprobe.isEmpty()) {
-            return;
-        }
-        settings.setValue(QStringLiteral("ffprobePath"), ffprobe);
 
         QJsonArray clips;
+        QString successfulFfprobe;
         for (int i = 0; i < m_list->count(); ++i) {
             const QString path = m_list->item(i)->data(Qt::UserRole).toString();
             MediaInfo media;
             QString error;
-            if (!probeMedia(ffprobe, path, &media, &error)) {
+            bool readable = false;
+            for (const QString &ffprobe : ffprobes) {
+                if (probeMedia(ffprobe, path, &media, &error)) {
+                    readable = true;
+                    successfulFfprobe = ffprobe;
+                    break;
+                }
+            }
+            if (!readable) {
                 QMessageBox::critical(this, QStringLiteral("Could not read clip"),
-                                      QStringLiteral("%1\n\n%2").arg(QFileInfo(path).fileName(), error));
+                                      QStringLiteral("%1\\n\\nTried the available FFprobe versions.\\n%2").arg(QFileInfo(path).fileName(), error));
                 return;
             }
             clips.append(makeClip(path, media));
             statusBar()->showMessage(QStringLiteral("Reading clip %1 of %2…").arg(i + 1).arg(m_list->count()));
             QApplication::processEvents();
         }
+        QSettings().setValue(QStringLiteral("ffprobePath"), successfulFfprobe);
 
         const QJsonObject track{
             {QStringLiteral("OTIO_SCHEMA"), QStringLiteral("Track.1")},
