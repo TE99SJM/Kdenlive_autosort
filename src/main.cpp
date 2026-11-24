@@ -1,4 +1,7 @@
 #include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
 #include <QCollator>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -18,11 +21,13 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QWidget>
 #include <algorithm>
+#include <functional>
 
 namespace {
 const QSet<QString> kVideoExtensions = {
