@@ -214,7 +214,7 @@ bool probeMedia(const QString &ffprobe, const QString &path, MediaInfo *info, QS
 
 QJsonObject makeClip(const QString &path, const MediaInfo &media)
 {
-    const double frames = qMax(1.0, qRound64(media.durationSeconds * media.frameRate));
+    const double frames = static_cast<double>(qMax<qint64>(1, qRound64(media.durationSeconds * media.frameRate)));
     const QJsonObject timeRange{
         {QStringLiteral("OTIO_SCHEMA"), QStringLiteral("TimeRange.1")},
         {QStringLiteral("start_time"), rationalTime(0.0, media.frameRate)},
