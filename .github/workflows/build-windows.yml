@@ -1,0 +1,54 @@
+name: Build Windows package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.2
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtbase
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Bundle Qt runtime
+        shell: pwsh
+        run: |
+          $package = Join-Path $PWD "package"
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          $exe = Join-Path $PWD "build/Release/kdenlive-autosort.exe"
+          Copy-Item $exe $package
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations --compiler-runtime --dir $package (Join-Path $package "kdenlive-autosort.exe")
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed with exit code $LASTEXITCODE" }
+          Copy-Item README.md, LICENSE $package
+          Compress-Archive -Path "$package/*" -DestinationPath "KdenliveAutoSort-Windows-x64.zip" -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: KdenliveAutoSort-Windows-x64
+          path: KdenliveAutoSort-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
