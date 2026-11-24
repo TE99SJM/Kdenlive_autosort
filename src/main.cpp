@@ -21,6 +21,7 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QStatusBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -400,17 +401,28 @@ private:
             return;
         }
 
-        QString ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
+        QSettings settings;
+        QString ffprobe = settings.value(QStringLiteral("ffprobePath")).toString();
+        if (!QFileInfo::exists(ffprobe)) {
+            ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
 #ifdef Q_OS_WIN
-        if (ffprobe.isEmpty()) {
-            ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe.exe"));
-        }
+            if (ffprobe.isEmpty()) {
+                ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe.exe"));
+            }
 #endif
+        }
         if (ffprobe.isEmpty()) {
-            QMessageBox::critical(this, QStringLiteral("FFprobe not found"),
-                                  QStringLiteral("Install FFmpeg and make sure ffprobe is available on PATH."));
+#ifdef Q_OS_WIN
+            const QString filter = QStringLiteral("FFprobe (ffprobe.exe);;All files (*)");
+#else
+            const QString filter = QStringLiteral("FFprobe (ffprobe);;All files (*)");
+#endif
+            ffprobe = QFileDialog::getOpenFileName(this, QStringLiteral("Locate FFprobe"), QString(), filter);
+        }
+        if (ffprobe.isEmpty()) {
             return;
         }
+        settings.setValue(QStringLiteral("ffprobePath"), ffprobe);
 
         QJsonArray clips;
         for (int i = 0; i < m_list->count(); ++i) {
